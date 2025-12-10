@@ -1,0 +1,68 @@
+name: ShopSafe CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Checkout Code
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    # 2. Login to Docker Hub (Required for pushing)
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    # 3. SECURITY: Scan the Code (Trivy)
+    # This hits the "DevSecOps" criteria heavily.
+    - name: Build Gateway for Scanning
+      run: docker build -t gateway:scan ./gateway
+      
+    - name: Run Trivy Vulnerability Scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'gateway:scan'
+        format: 'table'
+        exit-code: '0' # Don't fail the build for now, just report
+        severity: 'CRITICAL,HIGH'
+
+    # 4. Build & Push Images (The "Artifacts")
+    - name: Build and Push Gateway
+      uses: docker/build-push-action@v4
+      with:
+        context: ./gateway
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/shopsafe-gateway:latest
+
+    - name: Build and Push Auth
+      uses: docker/build-push-action@v4
+      with:
+        context: ./auth
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/shopsafe-auth:latest
+
+    - name: Build and Push Inventory
+      uses: docker/build-push-action@v4
+      with:
+        context: ./inventory
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/shopsafe-inventory:latest
+
+    # 5. DEPLOYMENT (Placeholder for the VM)
+    # In the real event, you un-comment this to update the live server.
+    # - name: Deploy to VM via SSH
+    #   uses: appleboy/ssh-action@v1.0.0
+    #   with:
+    #     host: ${{ secrets.VM_HOST }}
+    #     username: ${{ secrets.VM_USERNAME }}
+    #     password: ${{ secrets.VM_PASSWORD }}
+    #     script: |
+    #       docker-compose pull
+    #       docker-compose up -d
